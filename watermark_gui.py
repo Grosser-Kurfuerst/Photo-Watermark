@@ -8,7 +8,7 @@ Photo Watermark GUI Tool
 import os
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, colorchooser
-from PIL import Image, ImageTk, ImageDraw, ImageFont
+from PIL import Image, ImageTk, ImageDraw, ImageFont, ImageEnhance
 import piexif
 from pathlib import Path
 from datetime import datetime
@@ -83,10 +83,26 @@ class WatermarkGUI:
         self.supported_formats = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
         self.image_items = []
 
-        # 设置变量
+        # --- 设置变量 ---
+        # 水印类型
+        self.watermark_type = tk.StringVar(value="Text")
+
+        # 文本水印变量
         self.font_size = tk.IntVar(value=36)
         self.color = tk.StringVar(value="white")
+        self.text_opacity = tk.IntVar(value=100)
+        self.watermark_text_source = tk.StringVar(value="EXIF Date")
+        self.custom_watermark_text = tk.StringVar(value="自定义水印")
+
+        # 图片水印变量
+        self.image_watermark_path = tk.StringVar()
+        self.image_opacity = tk.IntVar(value=100)
+        self.image_scale = tk.IntVar(value=20) # 默认缩放为原图的20%
+
+        # 通用变量
         self.position = tk.StringVar(value="bottom-right")
+
+        # 输出变量
         self.output_format = tk.StringVar(value="JPEG")
         self.output_quality = tk.IntVar(value=95)
         self.output_dir = tk.StringVar()
@@ -122,105 +138,171 @@ class WatermarkGUI:
         drag_label = ttk.Label(import_frame, text="或直接拖拽图片文件到下方列表", foreground="gray")
         drag_label.pack(side=tk.RIGHT)
 
-        # 设置区域
+        # --- 设置区域 ---
         settings_frame = ttk.LabelFrame(main_frame, text="水印设置", padding="5")
         settings_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
+        settings_frame.columnconfigure(1, weight=1)
+
+        # --- 水印类型选择 ---
+        ttk.Label(settings_frame, text="水印类型:").grid(row=0, column=0, sticky="w", pady=2)
+        watermark_type_frame = ttk.Frame(settings_frame)
+        watermark_type_frame.grid(row=0, column=1, columnspan=2, sticky="ew", pady=2, padx=(5, 0))
+
+        text_watermark_frame = ttk.LabelFrame(settings_frame, text="文本水印设置", padding="10")
+        image_watermark_frame = ttk.LabelFrame(settings_frame, text="图片水印设置", padding="10")
+
+        def on_watermark_type_change():
+            if self.watermark_type.get() == "Text":
+                text_watermark_frame.grid(row=1, column=0, columnspan=3, sticky="ew", pady=5)
+                image_watermark_frame.grid_remove()
+            else:
+                image_watermark_frame.grid(row=1, column=0, columnspan=3, sticky="ew", pady=5)
+                text_watermark_frame.grid_remove()
+
+        ttk.Radiobutton(
+            watermark_type_frame, text="文本", variable=self.watermark_type,
+            value="Text", command=on_watermark_type_change
+        ).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Radiobutton(
+            watermark_type_frame, text="图片", variable=self.watermark_type,
+            value="Image", command=on_watermark_type_change
+        ).pack(side=tk.LEFT)
+
+        # --- 文本水印设置框架 ---
+        text_watermark_frame.columnconfigure(1, weight=1)
 
         # 字体大小
-        ttk.Label(settings_frame, text="字体大小:").grid(row=0, column=0, sticky="w", pady=2)
-
+        ttk.Label(text_watermark_frame, text="字体大小:").grid(row=0, column=0, sticky="w", pady=2)
         font_size_display = tk.StringVar(value=str(self.font_size.get()))
-
         def update_font_size_display(value):
             int_value = int(float(value))
             self.font_size.set(int_value)
             font_size_display.set(str(int_value))
-
-        font_scale = ttk.Scale(
-            settings_frame,
-            from_=12,
-            to=100,
-            variable=self.font_size,
-            orient=tk.HORIZONTAL,
-            command=update_font_size_display
-        )
+        font_scale = ttk.Scale(text_watermark_frame, from_=12, to=100, variable=self.font_size, orient=tk.HORIZONTAL, command=update_font_size_display)
         font_scale.grid(row=0, column=1, sticky="ew", pady=2, padx=(5, 0))
-        ttk.Label(settings_frame, textvariable=font_size_display).grid(row=0, column=2, pady=2, padx=(5, 0))
+        ttk.Label(text_watermark_frame, textvariable=font_size_display).grid(row=0, column=2, pady=2, padx=(5, 0))
 
         # 颜色选择
-        ttk.Label(settings_frame, text="字体颜色:").grid(row=1, column=0, sticky="w", pady=2)
-        color_frame = ttk.Frame(settings_frame)
+        ttk.Label(text_watermark_frame, text="字体颜色:").grid(row=1, column=0, sticky="w", pady=2)
+        color_frame = ttk.Frame(text_watermark_frame)
         color_frame.grid(row=1, column=1, columnspan=2, sticky="ew", pady=2, padx=(5, 0))
         ttk.Entry(color_frame, textvariable=self.color, width=10).pack(side=tk.LEFT)
         ttk.Button(color_frame, text="选择颜色", command=self.choose_color).pack(side=tk.LEFT, padx=(5, 0))
 
+        # 文本透明度
+        ttk.Label(text_watermark_frame, text="文本透明度:").grid(row=2, column=0, sticky="w", pady=2)
+        opacity_display = tk.StringVar(value=f"{self.text_opacity.get()}%")
+        def update_opacity_display(value):
+            int_value = int(float(value))
+            self.text_opacity.set(int_value)
+            opacity_display.set(f"{int_value}%")
+        opacity_scale = ttk.Scale(text_watermark_frame, from_=0, to=100, variable=self.text_opacity, orient=tk.HORIZONTAL, command=update_opacity_display)
+        opacity_scale.grid(row=2, column=1, sticky="ew", pady=2, padx=(5, 0))
+        ttk.Label(text_watermark_frame, textvariable=opacity_display).grid(row=2, column=2, pady=2, padx=(5, 0))
+
+        # 水印文本来源
+        ttk.Label(text_watermark_frame, text="水印内容:").grid(row=3, column=0, sticky="w", pady=2)
+        text_source_frame = ttk.Frame(text_watermark_frame)
+        text_source_frame.grid(row=3, column=1, columnspan=2, sticky="ew", pady=2, padx=(5, 0))
+        custom_text_entry = ttk.Entry(text_watermark_frame, textvariable=self.custom_watermark_text)
+        def on_text_source_change():
+            if self.watermark_text_source.get() == "Custom Text":
+                custom_text_entry.grid(row=4, column=1, columnspan=2, sticky="ew", pady=2, padx=(5, 0))
+            else:
+                custom_text_entry.grid_remove()
+        ttk.Radiobutton(text_source_frame, text="EXIF日期", variable=self.watermark_text_source, value="EXIF Date", command=on_text_source_change).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Radiobutton(text_source_frame, text="自定义文本", variable=self.watermark_text_source, value="Custom Text", command=on_text_source_change).pack(side=tk.LEFT)
+        on_text_source_change()
+
+        # --- 图片水印设置框架 ---
+        image_watermark_frame.columnconfigure(1, weight=1)
+
+        # 图片选择
+        ttk.Label(image_watermark_frame, text="水印图片:").grid(row=0, column=0, sticky="w", pady=2)
+        image_path_frame = ttk.Frame(image_watermark_frame)
+        image_path_frame.grid(row=0, column=1, columnspan=2, sticky="ew", pady=2, padx=(5, 0))
+        ttk.Entry(image_path_frame, textvariable=self.image_watermark_path, state="readonly").pack(side=tk.LEFT, expand=True, fill=tk.X)
+        ttk.Button(image_path_frame, text="选择图片...", command=self.select_watermark_image).pack(side=tk.LEFT, padx=(5, 0))
+
+        # 图片缩放
+        ttk.Label(image_watermark_frame, text="水印缩放(%):").grid(row=1, column=0, sticky="w", pady=2)
+        image_scale_display = tk.StringVar(value=f"{self.image_scale.get()}%")
+        def update_image_scale_display(value):
+            int_value = int(float(value))
+            self.image_scale.set(int_value)
+            image_scale_display.set(f"{int_value}%")
+        image_scale_slider = ttk.Scale(image_watermark_frame, from_=1, to=100, variable=self.image_scale, orient=tk.HORIZONTAL, command=update_image_scale_display)
+        image_scale_slider.grid(row=1, column=1, sticky="ew", pady=2, padx=(5, 0))
+        ttk.Label(image_watermark_frame, textvariable=image_scale_display).grid(row=1, column=2, pady=2, padx=(5, 0))
+
+        # 图片透明度
+        ttk.Label(image_watermark_frame, text="图片透明度:").grid(row=2, column=0, sticky="w", pady=2)
+        image_opacity_display = tk.StringVar(value=f"{self.image_opacity.get()}%")
+        def update_image_opacity_display(value):
+            int_value = int(float(value))
+            self.image_opacity.set(int_value)
+            image_opacity_display.set(f"{int_value}%")
+        image_opacity_slider = ttk.Scale(image_watermark_frame, from_=0, to=100, variable=self.image_opacity, orient=tk.HORIZONTAL, command=update_image_opacity_display)
+        image_opacity_slider.grid(row=2, column=1, sticky="ew", pady=2, padx=(5, 0))
+        ttk.Label(image_watermark_frame, textvariable=image_opacity_display).grid(row=2, column=2, pady=2, padx=(5, 0))
+
+        # --- 通用设置 ---
+        common_settings_frame = ttk.LabelFrame(settings_frame, text="通用与输出设置", padding="10")
+        common_settings_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=5)
+        common_settings_frame.columnconfigure(1, weight=1)
+
         # 位置选择
-        ttk.Label(settings_frame, text="水印位置:").grid(row=2, column=0, sticky="w", pady=2)
-        position_combo = ttk.Combobox(settings_frame, textvariable=self.position, state="readonly")
-        position_combo['values'] = (
-            'top-left', 'top-center', 'top-right',
-            'center-left', 'center', 'center-right',
-            'bottom-left', 'bottom-center', 'bottom-right'
-        )
-        position_combo.grid(row=2, column=1, columnspan=2, sticky="ew", pady=2, padx=(5, 0))
+        ttk.Label(common_settings_frame, text="水印位置:").grid(row=0, column=0, sticky="w", pady=2)
+        position_combo = ttk.Combobox(common_settings_frame, textvariable=self.position, state="readonly")
+        position_combo['values'] = ('top-left', 'top-center', 'top-right', 'center-left', 'center', 'center-right', 'bottom-left', 'bottom-center', 'bottom-right')
+        position_combo.grid(row=0, column=1, columnspan=2, sticky="ew", pady=2, padx=(5, 0))
 
         # 输出格式
-        ttk.Label(settings_frame, text="输出格式:").grid(row=3, column=0, sticky="w", pady=2)
-        format_combo = ttk.Combobox(settings_frame, textvariable=self.output_format, state="readonly")
+        ttk.Label(common_settings_frame, text="输出格式:").grid(row=1, column=0, sticky="w", pady=2)
+        format_combo = ttk.Combobox(common_settings_frame, textvariable=self.output_format, state="readonly")
         format_combo['values'] = ('JPEG', 'PNG')
-        format_combo.grid(row=3, column=1, columnspan=2, sticky="ew", pady=2, padx=(5, 0))
+        format_combo.grid(row=1, column=1, columnspan=2, sticky="ew", pady=2, padx=(5, 0))
 
         # 输出质量（仅JPEG）
-        ttk.Label(settings_frame, text="JPEG质量:").grid(row=4, column=0, sticky="w", pady=2)
-
+        ttk.Label(common_settings_frame, text="JPEG质量:").grid(row=2, column=0, sticky="w", pady=2)
         quality_display = tk.StringVar(value=str(self.output_quality.get()))
-
         def update_quality_display(value):
             int_value = int(float(value))
             self.output_quality.set(int_value)
             quality_display.set(str(int_value))
-
-        quality_scale = ttk.Scale(
-            settings_frame,
-            from_=1,
-            to=100,
-            variable=self.output_quality,
-            orient=tk.HORIZONTAL,
-            command=update_quality_display
-        )
-        quality_scale.grid(row=4, column=1, sticky="ew", pady=2, padx=(5, 0))
-        ttk.Label(settings_frame, textvariable=quality_display).grid(row=4, column=2, pady=2, padx=(5, 0))
+        quality_scale = ttk.Scale(common_settings_frame, from_=1, to=100, variable=self.output_quality, orient=tk.HORIZONTAL, command=update_quality_display)
+        quality_scale.grid(row=2, column=1, sticky="ew", pady=2, padx=(5, 0))
+        ttk.Label(common_settings_frame, textvariable=quality_display).grid(row=2, column=2, pady=2, padx=(5, 0))
 
         # 输出文件夹
-        ttk.Label(settings_frame, text="输出文件夹:").grid(row=5, column=0, sticky="w", pady=2)
-        output_dir_frame = ttk.Frame(settings_frame)
-        output_dir_frame.grid(row=5, column=1, columnspan=2, sticky="ew", pady=2, padx=(5, 0))
+        ttk.Label(common_settings_frame, text="输出文件夹:").grid(row=3, column=0, sticky="w", pady=2)
+        output_dir_frame = ttk.Frame(common_settings_frame)
+        output_dir_frame.grid(row=3, column=1, columnspan=2, sticky="ew", pady=2, padx=(5, 0))
         ttk.Entry(output_dir_frame, textvariable=self.output_dir).pack(side=tk.LEFT, expand=True, fill=tk.X)
         ttk.Button(output_dir_frame, text="选择...", command=self.select_output_dir).pack(side=tk.LEFT, padx=(5, 0))
 
         # 文件名前缀
-        ttk.Label(settings_frame, text="文件名前缀:").grid(row=6, column=0, sticky="w", pady=2)
-        ttk.Entry(settings_frame, textvariable=self.filename_prefix).grid(row=6, column=1, columnspan=2, sticky="ew", pady=2, padx=(5, 0))
+        ttk.Label(common_settings_frame, text="文件名前缀:").grid(row=4, column=0, sticky="w", pady=2)
+        ttk.Entry(common_settings_frame, textvariable=self.filename_prefix).grid(row=4, column=1, columnspan=2, sticky="ew", pady=2, padx=(5, 0))
 
         # 文件名后缀
-        ttk.Label(settings_frame, text="文件名后缀:").grid(row=7, column=0, sticky="w", pady=2)
-        ttk.Entry(settings_frame, textvariable=self.filename_suffix).grid(row=7, column=1, columnspan=2, sticky="ew", pady=2, padx=(5, 0))
+        ttk.Label(common_settings_frame, text="文件名后缀:").grid(row=5, column=0, sticky="w", pady=2)
+        ttk.Entry(common_settings_frame, textvariable=self.filename_suffix).grid(row=5, column=1, columnspan=2, sticky="ew", pady=2, padx=(5, 0))
 
         # 缩放选项
-        ttk.Label(settings_frame, text="调整尺寸:").grid(row=8, column=0, sticky="w", pady=2)
-        resize_frame = ttk.Frame(settings_frame)
-        resize_frame.grid(row=8, column=1, columnspan=2, sticky="ew", pady=2, padx=(5, 0))
+        ttk.Label(common_settings_frame, text="调整尺寸:").grid(row=6, column=0, sticky="w", pady=2)
+        resize_frame = ttk.Frame(common_settings_frame)
+        resize_frame.grid(row=6, column=1, columnspan=2, sticky="ew", pady=2, padx=(5, 0))
         resize_combo = ttk.Combobox(resize_frame, textvariable=self.resize_option, state="readonly", width=10)
         resize_combo['values'] = ('不缩放', '按宽度', '按高度', '按百分比')
         resize_combo.pack(side=tk.LEFT, padx=(0, 5))
         ttk.Entry(resize_frame, textvariable=self.resize_value, width=8).pack(side=tk.LEFT)
 
         # 处理按钮
-        ttk.Button(settings_frame, text="开始处理", command=self.process_images).grid(row=9, column=0, columnspan=3, pady=10)
+        ttk.Button(settings_frame, text="开始处理", command=self.process_images).grid(row=3, column=0, columnspan=3, pady=10)
 
-        # 配置网格权重
-        settings_frame.columnconfigure(1, weight=1)
-
+        # 初始状态
+        on_watermark_type_change()
         # 图片列表区域
         list_frame = ttk.LabelFrame(main_frame, text="图片列表", padding="5")
         list_frame.grid(row=1, column=1, sticky="nsew")
@@ -365,96 +447,160 @@ class WatermarkGUI:
         if color_code[1]:
             self.color.set(color_code[1])
 
-    def get_position_coordinates(self, image_size, text_size, position):
-        """根据位置参数计算文字坐标"""
+    def select_watermark_image(self):
+        """选择水印图片"""
+        filetypes = [('PNG图片', '*.png'), ('所有文件', '*.*')]
+        filepath = filedialog.askopenfilename(title="选择水印图片", filetypes=filetypes)
+        if filepath:
+            self.image_watermark_path.set(filepath)
+
+    def get_position_coordinates(self, image_size, watermark_size, position):
+        """根据位置参数计算水印坐标"""
         img_width, img_height = image_size
-        text_width, text_height = text_size
+        wm_width, wm_height = watermark_size
 
         positions = {
             'top-left': (10, 10),
-            'top-center': ((img_width - text_width) // 2, 10),
-            'top-right': (img_width - text_width - 10, 10),
-            'center-left': (10, (img_height - text_height) // 2),
-            'center': ((img_width - text_width) // 2, (img_height - text_height) // 2),
-            'center-right': (img_width - text_width - 10, (img_height - text_height) // 2),
-            'bottom-left': (10, img_height - text_height - 10),
-            'bottom-center': ((img_width - text_width) // 2, img_height - text_height - 10),
-            'bottom-right': (img_width - text_width - 10, img_height - text_height - 10)
+            'top-center': ((img_width - wm_width) // 2, 10),
+            'top-right': (img_width - wm_width - 10, 10),
+            'center-left': (10, (img_height - wm_height) // 2),
+            'center': ((img_width - wm_width) // 2, (img_height - wm_height) // 2),
+            'center-right': (img_width - wm_width - 10, (img_height - wm_height) // 2),
+            'bottom-left': (10, img_height - wm_height - 10),
+            'bottom-center': ((img_width - wm_width) // 2, img_height - wm_height - 10),
+            'bottom-right': (img_width - wm_width - 10, img_height - wm_height - 10)
         }
         return positions.get(position, positions['bottom-right'])
 
-    def process_single_image(self, image_item, output_dir, font_size, color, position, output_format, quality,
-                             prefix, suffix, resize_option, resize_value):
+    def apply_text_watermark(self, image, params):
+        """应用文本水印"""
+        watermark_text = ""
+        if params["watermark_text_source"] == "EXIF Date":
+            if not params["image_item"].exif_date:
+                return None, "无EXIF拍摄时间"
+            watermark_text = params["image_item"].exif_date
+        else:  # Custom Text
+            if not params["custom_watermark_text"]:
+                return None, "自定义文本为空"
+            watermark_text = params["custom_watermark_text"]
+
+        draw = ImageDraw.Draw(image)
+        try:
+            font_paths = ["C:/Windows/Fonts/simhei.ttf", "C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/arial.ttf"]
+            font = next((ImageFont.truetype(fp, params["font_size"]) for fp in font_paths if os.path.exists(fp)), ImageFont.load_default())
+        except Exception:
+            font = ImageFont.load_default()
+
+        bbox = draw.textbbox((0, 0), watermark_text, font=font)
+        text_width, text_height = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        x, y = self.get_position_coordinates(image.size, (text_width, text_height), params["position"])
+
+        try:
+            rgb_color = Image.new("RGB", (1, 1), params["color"]).getpixel((0, 0))
+        except ValueError:
+            from PIL import ImageColor
+            rgb_color = ImageColor.getrgb(params["color"])
+
+        alpha = int(255 * (params["text_opacity"] / 100))
+        final_color = rgb_color + (alpha,)
+
+        overlay = Image.new('RGBA', image.size, (0, 0, 0, 0))
+        overlay_draw = ImageDraw.Draw(overlay)
+        padding = 5
+        overlay_draw.rectangle(
+            [x - padding, y - padding, x + text_width + padding, y + text_height + padding],
+            fill=(0, 0, 0, int(128 * (params["text_opacity"] / 100)))
+        )
+        image = Image.alpha_composite(image, overlay)
+
+        final_draw = ImageDraw.Draw(image)
+        final_draw.text((x, y), watermark_text, fill=final_color, font=font)
+        return image, "成功"
+
+    def apply_image_watermark(self, image, params):
+        """应用图片水印"""
+        watermark_path = params["image_watermark_path"]
+        if not watermark_path or not Path(watermark_path).exists():
+            return None, "水印图片路径无效"
+
+        with Image.open(watermark_path).convert("RGBA") as watermark:
+            # 调整水印透明度
+            if params["image_opacity"] < 100:
+                alpha = watermark.split()[3]
+                alpha = ImageEnhance.Brightness(alpha).enhance(params["image_opacity"] / 100)
+                watermark.putalpha(alpha)
+
+            # 调整水印大小
+            scale_percent = params["image_scale"]
+            base_width = image.size[0]
+            w_width, w_height = watermark.size
+            target_width = int(base_width * (scale_percent / 100))
+            w_ratio = w_height / w_width
+            target_height = int(target_width * w_ratio)
+            watermark = watermark.resize((target_width, target_height), Image.Resampling.LANCZOS)
+
+            # 计算位置并粘贴
+            x, y = self.get_position_coordinates(image.size, watermark.size, params["position"])
+
+            # 创建一个透明层来粘贴水印
+            overlay = Image.new('RGBA', image.size, (0, 0, 0, 0))
+            overlay.paste(watermark, (x, y), watermark)
+
+            # 合成
+            image = Image.alpha_composite(image, overlay)
+
+        return image, "成功"
+
+
+    def process_single_image(self, image_item, output_dir, **params):
         """处理单张图片"""
         try:
-            if not image_item.exif_date:
-                return False, "无EXIF拍摄时间"
-
             with Image.open(image_item.file_path) as image:
                 original_mode = image.mode
 
                 # 调整尺寸
-                if resize_option != '不缩放':
+                if params["resize_option"] != '不缩放':
                     w, h = image.size
-                    if resize_option == '按宽度':
-                        new_w = resize_value
+                    if params["resize_option"] == '按宽度':
+                        new_w = params["resize_value"]
                         new_h = int(h * (new_w / w))
-                    elif resize_option == '按高度':
-                        new_h = resize_value
+                    elif params["resize_option"] == '按高度':
+                        new_h = params["resize_value"]
                         new_w = int(w * (new_h / h))
-                    elif resize_option == '按百分比':
-                        new_w = int(w * resize_value / 100)
-                        new_h = int(h * resize_value / 100)
+                    elif params["resize_option"] == '按百分比':
+                        new_w = int(w * params["resize_value"] / 100)
+                        new_h = int(h * params["resize_value"] / 100)
                     else:
                         new_w, new_h = w, h
                     image = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
-                # 统一转换为RGBA进行处理，以支持透明度
-                if original_mode not in ('RGBA', 'RGB'):
-                    image = image.convert('RGBA')
-                elif original_mode == 'RGB':
+                # 统一转换为RGBA进行处理
+                if image.mode != 'RGBA':
                     image = image.convert('RGBA')
 
-                draw = ImageDraw.Draw(image)
+                # 应用水印
+                params["image_item"] = image_item
+                if params["watermark_type"] == "Text":
+                    image, message = self.apply_text_watermark(image, params)
+                else: # Image
+                    image, message = self.apply_image_watermark(image, params)
 
-                try:
-                    font_paths = ["C:/Windows/Fonts/simhei.ttf", "C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/arial.ttf"]
-                    font = next((ImageFont.truetype(fp, font_size) for fp in font_paths if os.path.exists(fp)), ImageFont.load_default())
-                except Exception:
-                    font = ImageFont.load_default()
-
-                bbox = draw.textbbox((0, 0), image_item.exif_date, font=font)
-                text_width, text_height = bbox[2] - bbox[0], bbox[3] - bbox[1]
-                x, y = self.get_position_coordinates(image.size, (text_width, text_height), position)
-
-                # 创建半透明背景
-                overlay = Image.new('RGBA', image.size, (0, 0, 0, 0))
-                overlay_draw = ImageDraw.Draw(overlay)
-                padding = 5
-                overlay_draw.rectangle(
-                    [x - padding, y - padding, x + text_width + padding, y + text_height + padding],
-                    fill=(0, 0, 0, 128)
-                )
-                image = Image.alpha_composite(image, overlay)
-
-                # 在合并后的图像上绘制文字
-                final_draw = ImageDraw.Draw(image)
-                final_draw.text((x, y), image_item.exif_date, fill=color, font=font)
+                if image is None:
+                    return False, message
 
                 # 根据输出格式进行转换和保存
-                output_ext = '.jpg' if output_format == 'JPEG' else '.png'
-                new_filename = f"{prefix}{image_item.file_path.stem}{suffix}{output_ext}"
+                output_ext = '.jpg' if params["output_format"] == 'JPEG' else '.png'
+                new_filename = f"{params['prefix']}{image_item.file_path.stem}{params['suffix']}{output_ext}"
                 output_path = output_dir / new_filename
 
-                if output_format == 'JPEG':
-                    # 如果原始图片有透明度，需要填充背景色
+                if params["output_format"] == 'JPEG':
                     if image.mode in ('RGBA', 'LA'):
                         background = Image.new('RGB', image.size, (255, 255, 255))
                         background.paste(image, mask=image.split()[-1])
                         image = background
                     else:
                         image = image.convert('RGB')
-                    image.save(output_path, 'JPEG', quality=quality, optimize=True)
+                    image.save(output_path, 'JPEG', quality=params["quality"], optimize=True)
                 else: # PNG
                     image.save(output_path, 'PNG', optimize=True)
 
@@ -485,11 +631,27 @@ class WatermarkGUI:
                 return
 
         params = {
-            "font_size": self.font_size.get(), "color": self.color.get(),
-            "position": self.position.get(), "output_format": self.output_format.get(),
+            # 水印类型
+            "watermark_type": self.watermark_type.get(),
+            # 文本水印
+            "font_size": self.font_size.get(),
+            "color": self.color.get(),
+            "text_opacity": self.text_opacity.get(),
+            "watermark_text_source": self.watermark_text_source.get(),
+            "custom_watermark_text": self.custom_watermark_text.get(),
+            # 图片水印
+            "image_watermark_path": self.image_watermark_path.get(),
+            "image_opacity": self.image_opacity.get(),
+            "image_scale": self.image_scale.get(),
+            # 通用
+            "position": self.position.get(),
+            # 输出
+            "output_format": self.output_format.get(),
             "quality": self.output_quality.get(),
-            "prefix": self.filename_prefix.get(), "suffix": self.filename_suffix.get(),
-            "resize_option": self.resize_option.get(), "resize_value": self.resize_value.get()
+            "prefix": self.filename_prefix.get(),
+            "suffix": self.filename_suffix.get(),
+            "resize_option": self.resize_option.get(),
+            "resize_value": self.resize_value.get(),
         }
 
         def process_thread():
@@ -536,3 +698,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
