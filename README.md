@@ -1,168 +1,108 @@
-# Photo-Watermark
+# Photo Watermark Tool
 
-一个命令行工具：读取图片 EXIF 拍摄时间 (年-月-日) 并生成文字水印，支持单文件或整目录批量处理，输出到“原目录名_watermark”子目录，不修改原图。
+一个基于 Python 的图片水印工具，可以自动提取照片的 EXIF 拍摄日期，并将其作为水印添加到图片上。项目提供命令行 (CLI) 和图形用户界面 (GUI) 两种操作方式。
 
----
-## 功能特性
-- 自动提取 EXIF 拍摄日期 (DateTimeOriginal / DateTimeDigitized / DateTime)
-- 未找到日期则跳过并提示
-- 支持输入：单个图片文件 或 包含多张图片的目录
-- 支持格式：JPG / JPEG / PNG / TIFF / BMP
-- 可自定义：字体大小、颜色、位置（九宫格）
-- 半透明黑色底框提高可读性
-- 覆盖已存在的同名输出文件
+## 主要功能
 
----
-## 环境要求
-- Python 3.6+
-- 系统已安装常见中文或西文字体（工具会尝试：simhei.ttf、msyh.ttc、arial.ttf）
+- **自动提取日期**：从图片 EXIF 信息中读取拍摄日期 (`YYYY-MM-DD`) 作为水印内容。
+- **多种导入方式 (GUI)**：
+    - **文件选择器**：支持单张或多张图片选择。
+    - **文件夹导入**：一键导入整个文件夹内的所有支持格式的图片。
+    - **拖拽导入**：直接将文件或文件夹拖拽到程序窗口即可添加。
+- **实时预览 (GUI)**：在列表中显示已导入图片的缩略图、文件名和提取的拍摄日期。
+- **高度可定制**：
+    - **字体大小**：通过滑块自由调整。
+    - **字体颜色**：支持颜色选择器或手动输入颜色代码。
+    - **水印位置**：提供九个预设位置（如左上、居中、右下）。
+- **格式支持**：
+    - **输入格式**：支持 JPEG, PNG, BMP, TIFF 等主流格式。
+    - **输出格式**：可选择输出为 JPEG 或 PNG。
+    - **PNG 透明通道**：完整保留和处理 PNG 图片的透明度。
+- **批量处理**：无论是 CLI 还是 GUI 版本，都支持一次性处理大量图片。
+- **智能输出**：处理后的图片将保存在原目录下的一个新子目录中（例如 `原目录名_watermark`），不会覆盖原始文件。
 
----
 ## 安装
-### 克隆或下载代码后安装依赖
+
+在开始之前，请确保您已安装 Python 3.7 或更高版本。
+
+1.  克隆或下载此仓库到您的本地计算机。
+2.  打开终端或命令提示符，进入项目根目录。
+3.  运行以下命令安装所有必需的依赖库：
+
+    ```bash
+    pip install -r requirements.txt
+    ```
+    *注意：`tkinterdnd2` 库为 GUI 版本的拖拽功能提供支持。如果安装失败或环境不支持，GUI 仍然可以运行，但拖拽功能将不可用。*
+
+## 使用方法
+
+### 1. GUI 版本 (推荐)
+
+GUI 版本提供了最直观、功能最丰富的操作体验。
+
+**启动程序：**
+
 ```bash
-pip install -r requirements.txt
+python watermark_gui.py
 ```
-或手动：
+
+**操作步骤：**
+
+1.  **导入图片**：
+    - 点击 **"选择文件"** 或 **"选择文件夹"** 按钮。
+    - 或者直接将图片文件/文件夹 **拖拽** 到程序窗口中。
+    - 导入的图片将以 **缩略图和文件名** 的形式显示在右侧列表中。
+2.  **配置水印**：
+    - **字体大小**：拖动滑块调整，旁边的数字会实时显示整数大小。
+    - **字体颜色**：点击 **"选择颜色"** 按钮或直接输入颜色名称/十六进制代码。
+    - **水印位置**：从下拉菜单中选择一个位置。
+    - **输出格式**：选择 JPEG 或 PNG。如果选择 JPEG，还可以调整输出质量。
+3.  **开始处理**：
+    - 点击 **"开始处理"** 按钮。
+    - 下方的进度条将显示处理进度。
+    - 处理完成后，会弹出提示框告知结果，并说明文件保存的路径。
+
+### 2. 命令行版本
+
+对于喜欢使用终端或需要进行自动化脚本处理的用户，可以使用命令行版本。
+
+**基本命令格式：**
+
 ```bash
-pip install Pillow piexif click
+python watermark.py [输入路径] [选项]
 ```
-> PowerShell 请逐条执行，不要使用 `&&`。
 
----
-## 快速开始
-处理目录：
+-   `[输入路径]`：可以是单张图片的路径，也可以是包含多个图片的文件夹路径。
+
+**选项：**
+
+-   `--font-size, -s`：设置字体大小 (默认: 36)。
+-   `--color, -c`：设置字体颜色 (默认: "white")。支持颜色名称 (如 `red`) 或十六进制代码 (如 `#FF0000`)。
+-   `--position, -p`：设置水印位置 (默认: `bottom-right`)。
+
+**示例：**
+
 ```bash
-python watermark.py /path/to/photos
-```
-处理单个文件：
-```bash
-python watermark.py /path/to/photos/IMG_0001.jpg
-```
+# 处理单张图片，使用默认设置
+python watermark.py ./pic/my_photo.jpg
 
----
-## 命令参数
-| 参数 | 必填 | 默认 | 说明 |
-|------|------|------|------|
-| input_path | 是 | - | 图片文件或目录路径 |
-| -s / --font-size | 否 | 36 | 字体大小（像素） |
-| -c / --color | 否 | white | 字体颜色（颜色名或 #RRGGBB） |
-| -p / --position | 否 | bottom-right | 水印位置（九宫格） |
+# 处理整个文件夹，并将水印设置为红色的48号字体，位置在左上角
+python watermark.py ./pic/ --font-size 48 --color red --position top-left
 
-支持位置值：
-```
- top-left     top-center     top-right
- center-left  center         center-right
- bottom-left  bottom-center  bottom-right
+# 使用简写参数
+python watermark.py ./pic/ -s 48 -c red -p top-left
 ```
 
----
-## 示例
-1) 目录批量：
-```bash
-python watermark.py "C:/Photos/Trip2024"
-```
-2) 单文件：
-```bash
-python watermark.py "C:/Photos/Trip2024/IMG_1234.JPG"
-```
-3) 指定红色中央：
-```bash
-python watermark.py ./album -c red -p center
-```
-4) 指定大小与颜色（十六进制）：
-```bash
-python watermark.py ./album -s 54 -c #FFAA33 -p top-left
-```
+## 故障排除
 
----
-## 输出目录规则
-| 输入类型 | 示例输入 | 输出目录 |
-|----------|----------|----------|
-| 目录 | C:/Photos/Trip2024 | C:/Photos/Trip2024/Trip2024_watermark |
-| 单文件 | C:/Photos/Trip2024/IMG_0001.JPG | C:/Photos/Trip2024/Trip2024_watermark |
+-   **GUI 无法启动或缺少模块**：
+    请确保已按照 **安装** 步骤成功安装所有 `requirements.txt` 中的依赖。
 
-水印图片文件名与原文件名相同。
+-   **拖拽功能无效**：
+    这通常意味着 `tkinterdnd2` 库没有被正确安装或在您的操作系统/Python 环境中不受支持。您仍然可以通过 "选择文件" 和 "选择文件夹" 按钮正常使用程序。
 
----
-## EXIF 日期获取逻辑
-优先顺序：
-1. Exif: DateTimeOriginal
-2. Exif: DateTimeDigitized
-3. 0th: DateTime
+-   **图片没有添加水印**：
+    程序会自动跳过那些 **没有 EXIF 拍摄日期信息** 的图片。命令行窗口会打印相关提示。
 
-日期格式解析：`YYYY:MM:DD HH:MM:SS` → 输出 `YYYY-MM-DD`
-
-若图片缺失 EXIF 或字段损坏：该图片跳过。
-
----
-## 常见问题 (FAQ)
-**Q1: 输出目录为什么为空？**  
-A: 可能所有图片都缺少 EXIF 拍摄时间；用图片查看器验证是否存在拍摄时间。
-
-**Q2: PNG 没有 EXIF 怎么办？**  
-A: 大多数 PNG 没有拍摄时间，会被跳过，可手动添加或改代码自定义文本。
-
-**Q3: 想去掉水印背景框？**  
-A: 编辑 `watermark.py`，删除 `overlay_draw.rectangle(...)` 和 `alpha_composite` 相关几行。
-
-**Q4: 想自定义文字内容？**  
-A: 修改 `add_watermark` 中 `date_text` 变量，或新增参数。
-
-**Q5: 颜色怎么写？**  
-A: 支持如 `white`, `red`, `#1122CC`, `#FFAA00`。
-
-**Q6: 字体锯齿明显？**  
-A: 增大字体或换更清晰的字体（在 font_paths 中添加路径）。
-
----
-## 代码关键点
-`PhotoWatermark` 类：
-- `get_exif_date()` 解析并返回日期字符串
-- `add_watermark()` 渲染半透明背景 + 绘制文字
-- `process_directory()` 批量处理
-- `process_single_file()` 单文件模式
-
----
-## 可能的改进方向（未实现）
-- 递归子目录处理
-- 自定义水印文字模板（如：`{date} 我的水印`）
-- 去重检查（防止重复处理）
-- 添加并保留 EXIF 到输出文件
-- 多语言 CLI
-
----
-## 依赖说明
-| 库 | 作用 |
-|----|------|
-| Pillow | 图像读写与绘制 |
-| piexif | 解析 EXIF 信息 |
-| click | 构建命令行界面 |
-
-安装：`pip install -r requirements.txt`
-
----
-## 简易调试建议
-```bash
-# 查看脚本帮助
-python watermark.py --help
-
-# 仅测试一张含 EXIF 的图片
-python watermark.py tests/sample.jpg -p center -c yellow -s 40
-```
-
----
-## 许可证
-MIT License
-
----
-## 快速问题定位表
-| 现象 | 可能原因 | 建议 |
-|------|----------|------|
-| 全部跳过 | 无 EXIF 或无日期字段 | 用 exif 查看工具确认；改为自定义文本 | 
-| 中文字体不生效 | 系统缺字体文件 | 放置 ttf 并修改 font_paths |
-| 颜色不正确 | 十六进制错误 | 使用 `#RRGGBB` 格式 |
-| 输出过暗 | 半透明背景遮挡 | 去除背景矩形 |
-
----
-如需新增功能（递归、文本模板、LOG输出）可继续提出。
+-   **中文字体显示为方框** (非 Windows 系统)：
+    程序默认会尝试加载常见的 Windows 字体 (如黑体、微软雅黑)。如果在 macOS 或 Linux 上出现问题，您可能需要修改 `watermark_gui.py` 或 `watermark.py` 文件中的字体路径，指向您系统中存在的中文字体文件。
