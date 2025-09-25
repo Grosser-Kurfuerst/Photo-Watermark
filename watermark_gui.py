@@ -89,6 +89,11 @@ class WatermarkGUI:
         self.position = tk.StringVar(value="bottom-right")
         self.output_format = tk.StringVar(value="JPEG")
         self.output_quality = tk.IntVar(value=95)
+        self.output_dir = tk.StringVar()
+        self.filename_prefix = tk.StringVar()
+        self.filename_suffix = tk.StringVar(value="_watermarked")
+        self.resize_option = tk.StringVar(value="不缩放")
+        self.resize_value = tk.IntVar(value=100)
 
         self.create_widgets()
         self.setup_drag_drop()
@@ -167,12 +172,51 @@ class WatermarkGUI:
 
         # 输出质量（仅JPEG）
         ttk.Label(settings_frame, text="JPEG质量:").grid(row=4, column=0, sticky="w", pady=2)
-        quality_scale = ttk.Scale(settings_frame, from_=1, to=100, variable=self.output_quality, orient=tk.HORIZONTAL)
+
+        quality_display = tk.StringVar(value=str(self.output_quality.get()))
+
+        def update_quality_display(value):
+            int_value = int(float(value))
+            self.output_quality.set(int_value)
+            quality_display.set(str(int_value))
+
+        quality_scale = ttk.Scale(
+            settings_frame,
+            from_=1,
+            to=100,
+            variable=self.output_quality,
+            orient=tk.HORIZONTAL,
+            command=update_quality_display
+        )
         quality_scale.grid(row=4, column=1, sticky="ew", pady=2, padx=(5, 0))
-        ttk.Label(settings_frame, textvariable=self.output_quality).grid(row=4, column=2, pady=2, padx=(5, 0))
+        ttk.Label(settings_frame, textvariable=quality_display).grid(row=4, column=2, pady=2, padx=(5, 0))
+
+        # 输出文件夹
+        ttk.Label(settings_frame, text="输出文件夹:").grid(row=5, column=0, sticky="w", pady=2)
+        output_dir_frame = ttk.Frame(settings_frame)
+        output_dir_frame.grid(row=5, column=1, columnspan=2, sticky="ew", pady=2, padx=(5, 0))
+        ttk.Entry(output_dir_frame, textvariable=self.output_dir).pack(side=tk.LEFT, expand=True, fill=tk.X)
+        ttk.Button(output_dir_frame, text="选择...", command=self.select_output_dir).pack(side=tk.LEFT, padx=(5, 0))
+
+        # 文件名前缀
+        ttk.Label(settings_frame, text="文件名前缀:").grid(row=6, column=0, sticky="w", pady=2)
+        ttk.Entry(settings_frame, textvariable=self.filename_prefix).grid(row=6, column=1, columnspan=2, sticky="ew", pady=2, padx=(5, 0))
+
+        # 文件名后缀
+        ttk.Label(settings_frame, text="文件名后缀:").grid(row=7, column=0, sticky="w", pady=2)
+        ttk.Entry(settings_frame, textvariable=self.filename_suffix).grid(row=7, column=1, columnspan=2, sticky="ew", pady=2, padx=(5, 0))
+
+        # 缩放选项
+        ttk.Label(settings_frame, text="调整尺寸:").grid(row=8, column=0, sticky="w", pady=2)
+        resize_frame = ttk.Frame(settings_frame)
+        resize_frame.grid(row=8, column=1, columnspan=2, sticky="ew", pady=2, padx=(5, 0))
+        resize_combo = ttk.Combobox(resize_frame, textvariable=self.resize_option, state="readonly", width=10)
+        resize_combo['values'] = ('不缩放', '按宽度', '按高度', '按百分比')
+        resize_combo.pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Entry(resize_frame, textvariable=self.resize_value, width=8).pack(side=tk.LEFT)
 
         # 处理按钮
-        ttk.Button(settings_frame, text="开始处理", command=self.process_images).grid(row=5, column=0, columnspan=3, pady=10)
+        ttk.Button(settings_frame, text="开始处理", command=self.process_images).grid(row=9, column=0, columnspan=3, pady=10)
 
         # 配置网格权重
         settings_frame.columnconfigure(1, weight=1)
@@ -303,6 +347,12 @@ class WatermarkGUI:
             exif_label = ttk.Label(item_frame, text=exif_info, foreground="gray")
             exif_label.grid(row=1, column=1, sticky="w")
 
+    def select_output_dir(self):
+        """选择输出文件夹"""
+        directory = filedialog.askdirectory(title="选择输出文件夹")
+        if directory:
+            self.output_dir.set(directory)
+
     def clear_list(self):
         """清空图片列表"""
         self.image_items.clear()
@@ -333,7 +383,8 @@ class WatermarkGUI:
         }
         return positions.get(position, positions['bottom-right'])
 
-    def process_single_image(self, image_item, output_dir, font_size, color, position, output_format, quality):
+    def process_single_image(self, image_item, output_dir, font_size, color, position, output_format, quality,
+                             prefix, suffix, resize_option, resize_value):
         """处理单张图片"""
         try:
             if not image_item.exif_date:
@@ -341,6 +392,22 @@ class WatermarkGUI:
 
             with Image.open(image_item.file_path) as image:
                 original_mode = image.mode
+
+                # 调整尺寸
+                if resize_option != '不缩放':
+                    w, h = image.size
+                    if resize_option == '按宽度':
+                        new_w = resize_value
+                        new_h = int(h * (new_w / w))
+                    elif resize_option == '按高度':
+                        new_h = resize_value
+                        new_w = int(w * (new_h / h))
+                    elif resize_option == '按百分比':
+                        new_w = int(w * resize_value / 100)
+                        new_h = int(h * resize_value / 100)
+                    else:
+                        new_w, new_h = w, h
+                    image = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
                 # 统一转换为RGBA进行处理，以支持透明度
                 if original_mode not in ('RGBA', 'RGB'):
@@ -376,7 +443,8 @@ class WatermarkGUI:
 
                 # 根据输出格式进行转换和保存
                 output_ext = '.jpg' if output_format == 'JPEG' else '.png'
-                output_path = output_dir / f"{image_item.file_path.stem}{output_ext}"
+                new_filename = f"{prefix}{image_item.file_path.stem}{suffix}{output_ext}"
+                output_path = output_dir / new_filename
 
                 if output_format == 'JPEG':
                     # 如果原始图片有透明度，需要填充背景色
@@ -401,14 +469,27 @@ class WatermarkGUI:
             messagebox.showwarning("警告", "请先添加图片文件")
             return
 
-        first_image_dir = self.image_items[0].file_path.parent
-        output_dir = first_image_dir / f"{first_image_dir.name}_watermark"
-        output_dir.mkdir(exist_ok=True)
+        output_dir_str = self.output_dir.get()
+        if not output_dir_str:
+            messagebox.showwarning("警告", "请选择一个输出文件夹")
+            return
+
+        output_dir = Path(output_dir_str)
+        if not output_dir.exists():
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+        # 检查是否与原图文件夹相同
+        source_dirs = {item.file_path.parent for item in self.image_items}
+        if output_dir in source_dirs:
+            if not messagebox.askyesno("警告", "输出文件夹与原图文件夹相同，可能覆盖原文件，是否继续?"):
+                return
 
         params = {
             "font_size": self.font_size.get(), "color": self.color.get(),
             "position": self.position.get(), "output_format": self.output_format.get(),
-            "quality": self.output_quality.get()
+            "quality": self.output_quality.get(),
+            "prefix": self.filename_prefix.get(), "suffix": self.filename_suffix.get(),
+            "resize_option": self.resize_option.get(), "resize_value": self.resize_value.get()
         }
 
         def process_thread():
