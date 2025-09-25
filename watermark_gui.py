@@ -6,6 +6,7 @@ Photo Watermark GUI Tool
 """
 
 import os
+import json
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, colorchooser
 from PIL import Image, ImageTk, ImageDraw, ImageFont, ImageEnhance
@@ -126,11 +127,23 @@ class WatermarkGUI:
         self.watermark_y_offset = 0
         self.manual_position = False  # 是否使用手动位置
 
+        # 模板相关变量
+        self.templates_dir = Path("templates")
+        self.templates_dir.mkdir(exist_ok=True)
+        self.settings_file = self.templates_dir / "last_settings.json"
+        self.current_template_name = tk.StringVar()
+
         self.create_widgets()
         self.setup_drag_drop()
 
         # 绑定变量变化事件，用于实时预览
         self.bind_preview_events()
+
+        # 加载上次的设置
+        self.load_last_settings()
+
+        # 绑定窗口关闭事件
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def create_widgets(self):
         """创建GUI组件"""
@@ -151,6 +164,14 @@ class WatermarkGUI:
         ttk.Button(import_frame, text="选择文件", command=self.select_files).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(import_frame, text="选择文件夹", command=self.select_folder).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(import_frame, text="清空列表", command=self.clear_list).pack(side=tk.LEFT, padx=(0, 5))
+
+        # 模板管理按钮
+        template_frame = ttk.Frame(import_frame)
+        template_frame.pack(side=tk.LEFT, padx=(20, 0))
+
+        ttk.Button(template_frame, text="保存模板", command=self.save_template_dialog).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(template_frame, text="加载模板", command=self.load_template_dialog).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(template_frame, text="管理模板", command=self.manage_templates_dialog).pack(side=tk.LEFT, padx=(0, 5))
 
         # 拖拽提示
         drag_label = ttk.Label(import_frame, text="或直接拖拽图片文件到下方列表", foreground="gray")
@@ -1118,6 +1139,322 @@ class WatermarkGUI:
             if 0 <= index < len(self.image_items):
                 self.current_preview_item = self.image_items[index]
                 self.update_preview_image()
+
+    def load_last_settings(self):
+        """加载上次的设置"""
+        if not self.settings_file.exists():
+            return
+
+        try:
+            with open(self.settings_file, "r", encoding="utf-8") as f:
+                settings = json.load(f)
+
+            # 恢复所有设置参数
+            self.watermark_type.set(settings.get("watermark_type", "Text"))
+
+            # 文本水印设置
+            self.font_size.set(settings.get("font_size", 36))
+            self.color.set(settings.get("color", "white"))
+            self.text_opacity.set(settings.get("text_opacity", 100))
+            self.watermark_text_source.set(settings.get("watermark_text_source", "EXIF Date"))
+            self.custom_watermark_text.set(settings.get("custom_watermark_text", "自定义水印"))
+
+            # 图片水印设置
+            self.image_watermark_path.set(settings.get("image_watermark_path", ""))
+            self.image_opacity.set(settings.get("image_opacity", 100))
+            self.image_scale.set(settings.get("image_scale", 20))
+
+            # 通用与输出设置
+            self.position.set(settings.get("position", "bottom-right"))
+            self.rotation_angle.set(settings.get("rotation_angle", 0))
+            self.output_format.set(settings.get("output_format", "JPEG"))
+            self.output_quality.set(settings.get("output_quality", 95))
+            self.output_dir.set(settings.get("output_dir", ""))
+            self.filename_prefix.set(settings.get("filename_prefix", ""))
+            self.filename_suffix.set(settings.get("filename_suffix", "_watermarked"))
+            self.resize_option.set(settings.get("resize_option", "不缩放"))
+            self.resize_value.set(settings.get("resize_value", 100))
+
+            # 手动位置
+            self.manual_position = settings.get("manual_position", False)
+            self.watermark_x_offset = settings.get("watermark_x_offset", 0)
+            self.watermark_y_offset = settings.get("watermark_y_offset", 0)
+
+        except Exception as e:
+            print(f"加载设置时出错: {e}")
+
+    def save_settings(self):
+        """保存当前设置为模板"""
+        try:
+            settings = {
+                "watermark_type": self.watermark_type.get(),
+                "font_size": self.font_size.get(),
+                "color": self.color.get(),
+                "text_opacity": self.text_opacity.get(),
+                "watermark_text_source": self.watermark_text_source.get(),
+                "custom_watermark_text": self.custom_watermark_text.get(),
+                "image_watermark_path": self.image_watermark_path.get(),
+                "image_opacity": self.image_opacity.get(),
+                "image_scale": self.image_scale.get(),
+                "position": self.position.get(),
+                "rotation_angle": self.rotation_angle.get(),
+                # 添加手动位置信息
+                "manual_position": self.manual_position,
+                "watermark_x_offset": self.watermark_x_offset,
+                "watermark_y_offset": self.watermark_y_offset,
+                "output_format": self.output_format.get(),
+                "output_quality": self.output_quality.get(),
+                "output_dir": self.output_dir.get(),
+                "filename_prefix": self.filename_prefix.get(),
+                "filename_suffix": self.filename_suffix.get(),
+                "resize_option": self.resize_option.get(),
+                "resize_value": self.resize_value.get(),
+            }
+
+            # 使用当前时间戳作为模板文件名
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            template_file = self.templates_dir / f"template_{timestamp}.json"
+
+            with open(template_file, "w", encoding="utf-8") as f:
+                json.dump(settings, f, ensure_ascii=False, indent=4)
+
+            messagebox.showinfo("保存模板", f"设置已保存为模板: {template_file.name}")
+        except Exception as e:
+            messagebox.showerror("保存模板", f"保存设置时出错: {e}")
+
+    def apply_template(self, template_path):
+        """应用模板设置"""
+        try:
+            with open(template_path, "r", encoding="utf-8") as f:
+                settings = json.load(f)
+
+            # 应用所有设置参数，不论水印类型
+            self.watermark_type.set(settings.get("watermark_type", "Text"))
+
+            # 文本水印设置
+            self.font_size.set(settings.get("font_size", 36))
+            self.color.set(settings.get("color", "white"))
+            self.text_opacity.set(settings.get("text_opacity", 100))
+            self.watermark_text_source.set(settings.get("watermark_text_source", "EXIF Date"))
+            self.custom_watermark_text.set(settings.get("custom_watermark_text", "自定义水印"))
+
+            # 图片水印设置
+            self.image_watermark_path.set(settings.get("image_watermark_path", ""))
+            self.image_opacity.set(settings.get("image_opacity", 100))
+            self.image_scale.set(settings.get("image_scale", 20))
+
+            # 通用与输出设置
+            self.position.set(settings.get("position", "bottom-right"))
+            self.rotation_angle.set(settings.get("rotation_angle", 0))
+            self.output_format.set(settings.get("output_format", "JPEG"))
+            self.output_quality.set(settings.get("output_quality", 95))
+            self.output_dir.set(settings.get("output_dir", ""))
+            self.filename_prefix.set(settings.get("filename_prefix", ""))
+            self.filename_suffix.set(settings.get("filename_suffix", "_watermarked"))
+            self.resize_option.set(settings.get("resize_option", "不缩放"))
+            self.resize_value.set(settings.get("resize_value", 100))
+
+            # 恢复手动位置信息
+            self.manual_position = settings.get("manual_position", False)
+            self.watermark_x_offset = settings.get("watermark_x_offset", 0)
+            self.watermark_y_offset = settings.get("watermark_y_offset", 0)
+
+            # 更新预览如果有选中的图片
+            if self.current_preview_item:
+                self.update_preview_image()
+
+            messagebox.showinfo("应用模板", f"模板 '{Path(template_path).name}' 已加载")
+        except Exception as e:
+            messagebox.showerror("应用模板", f"加载模板时出错: {e}")
+
+    def load_templates(self):
+        """加载模板列表"""
+        try:
+            templates = sorted(self.templates_dir.glob("template_*.json"), key=os.path.getmtime)
+            return [t.name for t in templates]
+        except Exception as e:
+            print(f"加载模板时出错: {e}")
+            return []
+
+    def create_template_menu(self, menu):
+        """创建模板菜单"""
+        templates = self.load_templates()
+
+        def on_template_select(template_name):
+            if template_name == "新建模板":
+                self.save_settings()
+            else:
+                template_path = self.templates_dir / template_name
+                self.apply_template(template_path)
+
+        menu.add_command(label="保存设置为模板", command=lambda: self.save_settings())
+        menu.add_separator()
+
+        for template in templates:
+            menu.add_command(label=template.name, command=lambda t=template: on_template_select(t))
+        menu.add_separator()
+        menu.add_command(label="新建模板", command=lambda: on_template_select("新建模板"))
+
+    def save_template_dialog(self):
+        """保存模板对话框"""
+        self.save_settings()
+
+    def load_template_dialog(self):
+        """加载模板对话框"""
+        filetypes = [("JSON文件", "*.json"), ("所有文件", "*.*")]
+        filepath = filedialog.askopenfilename(title="加载模板", filetypes=filetypes)
+        if filepath:
+            self.apply_template(filepath)
+
+    def manage_templates_dialog(self):
+        """管理模板对话框"""
+        try:
+            # 获取模板文件列表（返回Path对象而不是文件名）
+            template_files = sorted(self.templates_dir.glob("template_*.json"), key=os.path.getmtime, reverse=True)
+        except Exception as e:
+            print(f"加载模板时出错: {e}")
+            template_files = []
+
+        if not template_files:
+            messagebox.showinfo("管理模板", "没有找到可用的模板")
+            return
+
+        manage_window = tk.Toplevel(self.root)
+        manage_window.title("管理模板")
+        manage_window.geometry("500x400")
+        manage_window.resizable(False, False)
+        manage_window.transient(self.root)
+        manage_window.grab_set()
+
+        # 居中显示窗口
+        manage_window.update_idletasks()
+        x = (manage_window.winfo_screenwidth() // 2) - (250)
+        y = (manage_window.winfo_screenheight() // 2) - (200)
+        manage_window.geometry(f"500x400+{x}+{y}")
+
+        # 说明标签
+        info_label = ttk.Label(manage_window, text="双击模板名称可以加载模板，或使用下方按钮进行操作", foreground="gray")
+        info_label.pack(pady=(10, 5))
+
+        # 列表框架
+        list_frame = ttk.Frame(manage_window)
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        # 滚动条
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical")
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # 模板列表框
+        template_listbox = tk.Listbox(list_frame, selectmode=tk.SINGLE, yscrollcommand=scrollbar.set)
+        template_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=template_listbox.yview)
+
+        # 绑定双击事件加载模板
+        def on_template_double_click(event):
+            selection = template_listbox.curselection()
+            if selection:
+                index = selection[0]
+                template_file = template_files[index]
+                self.apply_template(template_file)
+                manage_window.destroy()
+
+        template_listbox.bind("<Double-Button-1>", on_template_double_click)
+
+        # 填充模板列表，显示更友好的名称
+        for template_file in template_files:
+            # 从文件名提取时间戳
+            try:
+                timestamp_str = template_file.stem.replace("template_", "")
+                timestamp = datetime.strptime(timestamp_str, "%Y%m%d_%H%M%S")
+                display_name = f"{timestamp.strftime('%Y-%m-%d %H:%M:%S')} - {template_file.name}"
+            except:
+                display_name = template_file.name
+            template_listbox.insert(tk.END, display_name)
+
+        # 按钮框架
+        button_frame = ttk.Frame(manage_window)
+        button_frame.pack(fill=tk.X, padx=10, pady=10)
+
+        # 加载按钮
+        def load_template():
+            selection = template_listbox.curselection()
+            if not selection:
+                messagebox.showwarning("请选择", "请先选择一个模板")
+                return
+
+            index = selection[0]
+            template_file = template_files[index]
+            self.apply_template(template_file)
+            manage_window.destroy()
+
+        load_button = ttk.Button(button_frame, text="加载模板", command=load_template)
+        load_button.pack(side=tk.LEFT, padx=(0, 5))
+
+        # 删除按钮
+        def delete_template():
+            selection = template_listbox.curselection()
+            if not selection:
+                messagebox.showwarning("请选择", "请先选择一个模板")
+                return
+
+            index = selection[0]
+            template_file = template_files[index]
+
+            if messagebox.askyesno("确认删除", f"确定要删除模板 '{template_file.name}' 吗?"):
+                try:
+                    template_file.unlink()
+                    template_listbox.delete(index)
+                    template_files.pop(index)
+                    messagebox.showinfo("删除成功", "模板已删除")
+                except Exception as e:
+                    messagebox.showerror("删除失败", f"删除模板时出错: {e}")
+
+        delete_button = ttk.Button(button_frame, text="删除模板", command=delete_template)
+        delete_button.pack(side=tk.LEFT, padx=(0, 5))
+
+        # 关闭按钮
+        close_button = ttk.Button(button_frame, text="关闭", command=manage_window.destroy)
+        close_button.pack(side=tk.RIGHT)
+
+    def save_last_settings(self):
+        """保存当前设置到最后设置文件"""
+        try:
+            settings = {
+                "watermark_type": self.watermark_type.get(),
+                "font_size": self.font_size.get(),
+                "color": self.color.get(),
+                "text_opacity": self.text_opacity.get(),
+                "watermark_text_source": self.watermark_text_source.get(),
+                "custom_watermark_text": self.custom_watermark_text.get(),
+                "image_watermark_path": self.image_watermark_path.get(),
+                "image_opacity": self.image_opacity.get(),
+                "image_scale": self.image_scale.get(),
+                "position": self.position.get(),
+                "rotation_angle": self.rotation_angle.get(),
+                # 添加手动位置信息
+                "manual_position": self.manual_position,
+                "watermark_x_offset": self.watermark_x_offset,
+                "watermark_y_offset": self.watermark_y_offset,
+                "output_format": self.output_format.get(),
+                "output_quality": self.output_quality.get(),
+                "output_dir": self.output_dir.get(),
+                "filename_prefix": self.filename_prefix.get(),
+                "filename_suffix": self.filename_suffix.get(),
+                "resize_option": self.resize_option.get(),
+                "resize_value": self.resize_value.get(),
+            }
+
+            with open(self.settings_file, "w", encoding="utf-8") as f:
+                json.dump(settings, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            print(f"保存最后设置时出错: {e}")
+
+    def on_closing(self):
+        """处理窗口关闭事件"""
+        # 保存最后的设置
+        self.save_last_settings()
+        # 直接关闭程序
+        self.root.destroy()
 
 def main():
     """主函数"""
