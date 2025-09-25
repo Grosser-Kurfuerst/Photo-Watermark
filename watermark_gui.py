@@ -198,6 +198,9 @@ class WatermarkGUI:
                 image_watermark_frame.grid(row=1, column=0, columnspan=3, sticky="ew", pady=5)
                 text_watermark_frame.grid_remove()
 
+        # 存储函数引用，以便在模板加载时调用
+        self.on_watermark_type_change = on_watermark_type_change
+
         ttk.Radiobutton(
             watermark_type_frame, text="文本", variable=self.watermark_type,
             value="Text", command=on_watermark_type_change
@@ -251,6 +254,9 @@ class WatermarkGUI:
                 custom_text_entry.grid_remove()
         ttk.Radiobutton(text_source_frame, text="EXIF日期", variable=self.watermark_text_source, value="EXIF Date", command=on_text_source_change).pack(side=tk.LEFT, padx=(0, 10))
         ttk.Radiobutton(text_source_frame, text="自定义文本", variable=self.watermark_text_source, value="Custom Text", command=on_text_source_change).pack(side=tk.LEFT)
+
+        # 存储函数引用，以便在模板加载时调用
+        self.on_text_source_change = on_text_source_change
         on_text_source_change()
 
         # --- 图片水印设置框架 ---
@@ -304,17 +310,24 @@ class WatermarkGUI:
         rotation_frame = ttk.Frame(common_settings_frame)
         rotation_frame.grid(row=1, column=1, columnspan=2, sticky="ew", pady=2, padx=(5, 0))
 
-        rotation_display = tk.StringVar(value=f"{self.rotation_angle.get()}°")
+        self.rotation_display = tk.StringVar(value=f"{self.rotation_angle.get()}°")
         def update_rotation_display(value):
             int_value = int(float(value))
             self.rotation_angle.set(int_value)
-            rotation_display.set(f"{int_value}°")
+            self.rotation_display.set(f"{int_value}°")
+
+        def reset_rotation():
+            self.rotation_angle.set(0)
+            self.rotation_display.set("0°")
+
+        # 存储函数引用，以便在模板加载时调用
+        self.update_rotation_display = update_rotation_display
 
         rotation_scale = ttk.Scale(rotation_frame, from_=-180, to=180, variable=self.rotation_angle,
                                  orient=tk.HORIZONTAL, command=update_rotation_display)
         rotation_scale.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 5))
-        ttk.Label(rotation_frame, textvariable=rotation_display, width=6).pack(side=tk.LEFT)
-        ttk.Button(rotation_frame, text="重置", command=lambda: self.rotation_angle.set(0), width=6).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Label(rotation_frame, textvariable=self.rotation_display, width=6).pack(side=tk.LEFT)
+        ttk.Button(rotation_frame, text="重置", command=reset_rotation, width=6).pack(side=tk.LEFT, padx=(5, 0))
 
         # 输出格式
         ttk.Label(common_settings_frame, text="输出格式:").grid(row=2, column=0, sticky="w", pady=2)
@@ -1180,8 +1193,25 @@ class WatermarkGUI:
             self.watermark_x_offset = settings.get("watermark_x_offset", 0)
             self.watermark_y_offset = settings.get("watermark_y_offset", 0)
 
+            # 加载后同步UI显示
+            self._sync_ui_after_load_settings()
+
         except Exception as e:
             print(f"加载设置时出错: {e}")
+
+    def _sync_ui_after_load_settings(self):
+        """加载设置后同步UI显示"""
+        # 同步旋转角度显示
+        if hasattr(self, 'rotation_display'):
+            self.rotation_display.set(f"{self.rotation_angle.get()}°")
+
+        # 同步水印类型切换
+        if hasattr(self, 'on_watermark_type_change'):
+            self.on_watermark_type_change()
+
+        # 同步文本来源切换
+        if hasattr(self, 'on_text_source_change'):
+            self.on_text_source_change()
 
     def save_settings(self):
         """保存当前设置为模板"""
@@ -1259,6 +1289,9 @@ class WatermarkGUI:
             self.watermark_x_offset = settings.get("watermark_x_offset", 0)
             self.watermark_y_offset = settings.get("watermark_y_offset", 0)
 
+            # 加载后同步UI显示
+            self._sync_ui_after_load_settings()
+
             # 更新预览如果有选中的图片
             if self.current_preview_item:
                 self.update_preview_image()
@@ -1310,7 +1343,7 @@ class WatermarkGUI:
         """管理模板对话框"""
         try:
             # 获取模板文件列表（返回Path对象而不是文件名）
-            template_files = sorted(self.templates_dir.glob("template_*.json"), key=os.path.getmtime, reverse=True)
+            template_files = sorted(self.templates_dir.glob("*.json"), key=os.path.getmtime, reverse=True)
         except Exception as e:
             print(f"加载模板时出错: {e}")
             template_files = []
@@ -1389,6 +1422,102 @@ class WatermarkGUI:
 
         load_button = ttk.Button(button_frame, text="加载模板", command=load_template)
         load_button.pack(side=tk.LEFT, padx=(0, 5))
+
+        # 重命名按钮
+        def rename_template():
+            selection = template_listbox.curselection()
+            if not selection:
+                messagebox.showwarning("请选择", "请先选择一个模板")
+                return
+
+            index = selection[0]
+            template_file = template_files[index]
+
+            # 创建重命名对话框
+            rename_dialog = tk.Toplevel(manage_window)
+            rename_dialog.title("重命名模板")
+            rename_dialog.geometry("400x150")
+            rename_dialog.resizable(False, False)
+            rename_dialog.transient(manage_window)
+            rename_dialog.grab_set()
+
+            # 居中显示重命名对话框
+            rename_dialog.update_idletasks()
+            x = (rename_dialog.winfo_screenwidth() // 2) - (200)
+            y = (rename_dialog.winfo_screenheight() // 2) - (75)
+            rename_dialog.geometry(f"400x150+{x}+{y}")
+
+            # 对话框内容
+            ttk.Label(rename_dialog, text="请输入新的模板名称:", font=("", 10)).pack(pady=(20, 10))
+
+            # 输入框，预填充当前文件名（不含扩展名和时间戳前缀）
+            current_name = template_file.stem.replace("template_", "")
+            try:
+                # 尝试解析时间戳，如果成功则使用默认名称
+                datetime.strptime(current_name, "%Y%m%d_%H%M%S")
+                default_name = "我的水印模板"
+            except:
+                # 如果解析失败，说明已经是自定义名称
+                default_name = current_name
+
+            name_var = tk.StringVar(value=default_name)
+            name_entry = ttk.Entry(rename_dialog, textvariable=name_var, width=40)
+            name_entry.pack(pady=5)
+            name_entry.select_range(0, tk.END)  # 选中所有文本
+            name_entry.focus()
+
+            # 按钮框架
+            dialog_button_frame = ttk.Frame(rename_dialog)
+            dialog_button_frame.pack(pady=20)
+
+            def confirm_rename():
+                new_name = name_var.get().strip()
+                if not new_name:
+                    messagebox.showwarning("输入错误", "模板名称不能为空")
+                    return
+
+                # 检查名称是否包含非法字符
+                invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*']
+                if any(char in new_name for char in invalid_chars):
+                    messagebox.showwarning("输入错误", "模板名称不能包含以下字符: < > : \" / \\ | ? *")
+                    return
+
+                try:
+                    # 生成新的文件名，保持时间戳格式
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    new_filename = f"{new_name}.json"
+                    new_file_path = template_file.parent / new_filename
+
+                    # 重命名文件
+                    template_file.rename(new_file_path)
+
+                    # 更新列表和数组
+                    template_files[index] = new_file_path
+
+                    # 更新显示名称
+                    display_name = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {new_filename}"
+                    template_listbox.delete(index)
+                    template_listbox.insert(index, display_name)
+                    template_listbox.selection_set(index)  # 保持选中状态
+
+                    messagebox.showinfo("重命名成功", f"模板已重命名为: {new_name}")
+                    rename_dialog.destroy()
+
+                except Exception as e:
+                    messagebox.showerror("重命名失败", f"重命名模板时出错: {e}")
+
+            def cancel_rename():
+                rename_dialog.destroy()
+
+            ttk.Button(dialog_button_frame, text="确定", command=confirm_rename).pack(side=tk.LEFT, padx=(0, 10))
+            ttk.Button(dialog_button_frame, text="取消", command=cancel_rename).pack(side=tk.LEFT)
+
+            # 绑定回车键确认
+            rename_dialog.bind('<Return>', lambda e: confirm_rename())
+            rename_dialog.bind('<Escape>', lambda e: cancel_rename())
+
+        rename_button = ttk.Button(button_frame, text="重命名模板", command=rename_template)
+        rename_button.pack(side=tk.LEFT, padx=(0, 5))
 
         # 删除按钮
         def delete_template():
